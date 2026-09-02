@@ -1,0 +1,39 @@
+{
+  "name": "lang-switch",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently --kill-others --names ui,content,background --prefix-colors blue,green,magenta \"vite build --watch --mode ui-watch\" \"vite build --watch --mode content\" \"vite build --watch --mode background\"",
+    "dev:ui": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build && vite build --mode content && vite build --mode background",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:provider": "vitest run --config vitest.provider.config.ts",
+    "typecheck": "tsc -b --pretty false",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/chrome": "^0.2.2",
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^10.0.3",
+    "eslint": "^10.7.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "jsdom": "^29.1.1",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.64.0",
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10"
+  }
+}

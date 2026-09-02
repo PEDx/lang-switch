@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/icons/icon-32.png" />
+    <title>Lang Switch 开发入口</title>
+    <style>
+      :root { font-family: Inter, system-ui, sans-serif; color: #1c2639; background: #f3f5f8; }
+      body { display: grid; min-height: 100vh; place-items: center; margin: 0; }
+      main { width: min(520px, calc(100% - 40px)); padding: 30px; border: 1px solid #e0e5ed; border-radius: 18px; background: white; box-shadow: 0 12px 40px #24324a12; }
+      .brand { display: flex; align-items: center; gap: 14px; }
+      .brand img { width: 58px; height: 58px; object-fit: contain; }
+      h1 { margin: 0 0 8px; font-size: 24px; }
+      p { color: #667185; line-height: 1.6; }
+      nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 22px; }
+      a { border-radius: 10px; padding: 12px; background: #596de3; color: white; font-weight: 700; text-align: center; text-decoration: none; }
+      code { border-radius: 5px; background: #eef1f6; padding: 2px 5px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><img src="/brand/lang-switch-mark.png" alt="" /><h1>Lang Switch UI 预览</h1></div>
+      <p>此页面只用于 <code>pnpm dev:ui</code> 的 React UI 预览。完整扩展开发请运行 <code>pnpm dev</code>，并在 Chrome 中加载 <code>dist/</code>。</p>
+      <nav>
+        <a href="/sidepanel.html">Side Panel</a>
+        <a href="/options.html">Options</a>
+      </nav>
+    </main>
+  </body>
+</html>
