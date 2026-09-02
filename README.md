@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/brand/lang-switch-logo.png" alt="Lang Switch logo" width="220" />
+  <img src="./public/icons/icon-128.png" alt="Lang Switch logo" width="64" />
 </p>
 
 <h1 align="center">Lang Switch</h1>
