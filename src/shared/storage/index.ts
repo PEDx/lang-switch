@@ -56,11 +56,17 @@ export async function storageSet<T>(key: string, value: T): Promise<void> {
 
 export async function getSettings(): Promise<UserSettings> {
   const stored = await storageGet<Partial<UserSettings>>(STORAGE_KEYS.settings, {})
-  return { ...DEFAULT_SETTINGS, ...stored }
+  return {
+    ...DEFAULT_SETTINGS,
+    ...stored,
+    primaryProviderId: stored.primaryProviderId ?? stored.defaultProviderId,
+  }
 }
 
 export async function saveSettings(settings: UserSettings): Promise<void> {
-  await storageSet(STORAGE_KEYS.settings, settings)
+  const migrated = { ...settings }
+  delete migrated.defaultProviderId
+  await storageSet(STORAGE_KEYS.settings, migrated)
 }
 
 export async function getStorageUsage(): Promise<{ tasksBytes: number; cacheBytes: number; diagnosticsBytes: number; totalBytes: number }> {

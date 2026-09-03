@@ -160,6 +160,16 @@ export interface OpenAICompatibleConfig extends ProviderAdvancedConfig {
   customHeaders?: Record<string, string>
 }
 
+export interface OpenAIResponsesConfig extends ProviderAdvancedConfig {
+  id: string
+  name: string
+  type: 'openai-responses'
+  baseUrl: string
+  apiKey: string
+  model: string
+  customHeaders?: Record<string, string>
+}
+
 export interface AnthropicConfig extends ProviderAdvancedConfig {
   id: string
   name: string
@@ -171,7 +181,11 @@ export interface AnthropicConfig extends ProviderAdvancedConfig {
   customHeaders?: Record<string, string>
 }
 
-export type ProviderConfig = OpenAICompatibleConfig | AnthropicConfig
+export type ProviderConfig = OpenAICompatibleConfig | OpenAIResponsesConfig | AnthropicConfig
+
+export type TranslationStage = 'analysis' | 'initial' | 'review' | 'refinement'
+
+export type TranslationStageProviderIds = Partial<Record<TranslationStage, string>>
 
 export interface SiteRule {
   id: string
@@ -275,6 +289,9 @@ export interface TranslationTaskTelemetry {
 
 export interface UserSettings {
   defaultTargetLanguage: string
+  primaryProviderId?: string
+  translationStageProviderIds?: TranslationStageProviderIds
+  /** @deprecated Migrated to primaryProviderId when settings are loaded. */
   defaultProviderId?: string
   displayMode: DisplayMode
   originalOpacity: number

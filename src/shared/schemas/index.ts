@@ -11,18 +11,26 @@ export const translationResponseSchema = z.object({
   segments: z.array(segmentTranslationSchema),
 })
 
-export const reviewSuggestionSchema = z.object({
+export const criticalReviewIssueSchema = z.object({
   id: z.string().min(1),
-  issues: z.array(z.string()),
-  suggestion: z.string(),
+  type: z.string().min(1),
+  sourceEvidence: z.string().catch(''),
+  draftEvidence: z.string().catch(''),
+  instruction: z.string().catch(''),
+})
+
+export const styleReviewIssueSchema = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1),
+  draftEvidence: z.string().catch(''),
+  instruction: z.string().catch(''),
 })
 
 export const reviewResponseSchema = z.object({
-  overallAssessment: z.string(),
-  rewritePriorities: z.array(z.string()).max(5),
-  continuityIssues: z.array(z.string()),
-  terminologyIssues: z.array(z.string()),
-  segmentSuggestions: z.array(reviewSuggestionSchema),
+  verdict: z.enum(['pass', 'rewrite']).catch('rewrite'),
+  rewritePriorities: z.array(z.string()).catch([]),
+  criticalIssues: z.array(criticalReviewIssueSchema).catch([]),
+  styleIssues: z.array(styleReviewIssueSchema).catch([]),
 })
 
 export const articleContextSchema = z.object({
@@ -61,6 +69,16 @@ export const providerConfigSchema = z.discriminatedUnion('type', [
     id: z.string().min(1),
     name: z.string().min(1),
     type: z.literal('openai-compatible'),
+    baseUrl: z.string().url(),
+    apiKey: z.string().min(1),
+    model: z.string().min(1),
+    customHeaders: z.record(z.string(), z.string()).optional(),
+    ...providerAdvancedSchema,
+  }),
+  z.object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    type: z.literal('openai-responses'),
     baseUrl: z.string().url(),
     apiKey: z.string().min(1),
     model: z.string().min(1),

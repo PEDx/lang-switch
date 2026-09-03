@@ -36,12 +36,20 @@ describe('translation-agent inspired prompts', () => {
       context,
       targetLanguage: 'zh-CN',
       window,
+      terminology: 'CDN = CDN（保留原文）',
     })
     expect(prompt).toContain('<TRANSLATE_THIS>')
     expect(prompt).toContain('<CONTEXT_BEFORE>')
-    expect(prompt).toContain('绝对不要翻译或输出其中的段落')
-    expect(prompt).toContain('允许在同一个段落 ID 内拆句、合句和调整语序')
+    expect(prompt).toContain('never translate or output their segments')
+    expect(prompt).toContain('you may split, combine, and reorder sentences')
     expect(prompt).toContain('translatedText')
+    expect(prompt).toContain('<USER_GLOSSARY priority="highest">')
+    expect(prompt).toContain('CDN = CDN（保留原文）')
+    expect(prompt).toContain('described as')
+    expect(prompt).toContain('double newlines')
+    expect(prompt).toContain('outlining means “概述/勾勒”')
+    expect(prompt).toContain('normally creating 2–3 paragraphs')
+    expect(prompt).toContain('closing callback')
   })
 
   it('reviews the chunk as continuous prose and refines by rewriting', () => {
@@ -52,8 +60,10 @@ describe('translation-agent inspired prompts', () => {
       window,
       translations: draft,
     })
-    expect(reviewPrompt).toContain('把当前 Chunk 当作一段连续文章来审阅')
-    expect(reviewPrompt).toContain('segmentSuggestions 只列确有局部问题的 ID')
+    expect(reviewPrompt).toContain('Review this Chunk as continuous prose')
+    expect(reviewPrompt).toContain('must quote brief sourceEvidence and draftEvidence')
+    expect(reviewPrompt).toContain('abstract nouns that obscure who did what')
+    expect(reviewPrompt).toContain('do not fragment one logical chain')
 
     const refinePrompt = buildRefinePrompt({
       context,
@@ -61,15 +71,21 @@ describe('translation-agent inspired prompts', () => {
       window,
       translations: draft,
       review: {
-        overallAssessment: '准确但翻译腔明显。',
+        verdict: 'rewrite',
         rewritePriorities: ['恢复比喻'],
-        continuityIssues: [],
-        terminologyIssues: [],
-        segmentSuggestions: [],
+        criticalIssues: [],
+        styleIssues: [{
+          id: 'segment-2',
+          type: 'literal',
+          draftEvidence: '无线电与 CDN 通信',
+          instruction: '恢复原文比喻。',
+        }],
       },
     })
-    expect(refinePrompt).toContain('不要只替换几个词')
-    expect(refinePrompt).toContain('重建节奏')
-    expect(refinePrompt).toContain('感觉它原本就是一篇自然、连贯、有作者声音')
+    expect(refinePrompt).toContain('Do not merely swap a few words')
+    expect(refinePrompt).toContain('rebuild rhythm')
+    expect(refinePrompt).toContain('natural, coherent long-form prose')
+    expect(refinePrompt).toContain('Before output, silently compare source and final translation')
+    expect(refinePrompt).toContain('remove abstract nesting, repetition, and invalid collocations')
   })
 })

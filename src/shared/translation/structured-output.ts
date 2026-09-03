@@ -62,7 +62,7 @@ export async function parseWithOneRepair<T>(input: {
     const repaired = await input.provider.complete(
       {
         model: input.model,
-        system: '你是 JSON 格式修复器。',
+        system: 'You repair JSON structure without changing its content.',
         messages: [{ role: 'user', content: buildRepairPrompt(input.raw, input.shape) }],
         responseFormat: 'json',
         temperature: 0,

@@ -18,7 +18,8 @@ import {
   saveSettings,
   saveSiteRules,
 } from '../shared/storage'
-import { getProviderOriginPattern, requestHostPermission } from '../shared/api/provider-permissions'
+import { getProviderOriginPattern, requestHostPermissions } from '../shared/api/provider-permissions'
+import { resolveTranslationProviders, uniqueTranslationProviders } from '../shared/api/provider-routing'
 import { ExportPanel } from './components/ExportPanel'
 import { TranslationMonitor } from './components/TranslationMonitor'
 import { requiresArticleRegionConfirmation } from '../shared/article-region-guard'
@@ -74,7 +75,7 @@ export function App() {
   const currentTabIdRef = useRef<number | null>(null)
   const [logs, setLogs] = useState<DiagnosticLogEntry[]>([])
   const [exportTask, setExportTask] = useState<ExportTaskState | null>(null)
-  const [providerOrigin, setProviderOrigin] = useState('')
+  const [providerOrigins, setProviderOrigins] = useState<string[]>([])
   const [confirmedPartialSelector, setConfirmedPartialSelector] = useState<string | null>(null)
   const [pageAccessRequired, setPageAccessRequired] = useState(false)
 
@@ -99,8 +100,17 @@ export function App() {
         getProviders(),
       ])
       setSettings(storedSettings)
-      const selectedProvider = providers.find((item) => item.id === storedSettings.defaultProviderId) ?? providers[0]
-      setProviderOrigin(selectedProvider ? getProviderOriginPattern(selectedProvider) : '')
+      const matchingTask = taskResponse.task?.pageUrl === response.snapshot?.url
+        ? taskResponse.task
+        : undefined
+      const resolvedProviders = resolveTranslationProviders(
+        providers,
+        storedSettings,
+        matchingTask?.providerId,
+      )
+      setProviderOrigins(resolvedProviders
+        ? uniqueTranslationProviders(resolvedProviders).map(getProviderOriginPattern)
+        : [])
       if (!response.ok || !response.snapshot) throw new Error(response.error || '未能可靠识别文章主体')
       setTask(taskResponse.task?.pageUrl === response.snapshot.url ? taskResponse.task : null)
       setLogs(logResponse.logs ?? [])
@@ -166,8 +176,8 @@ export function App() {
     if (requiresArticleRegionConfirmation(snapshot) && !partialConfirmed) {
       return setError('当前只选择了文章的一部分，请先确认翻译范围')
     }
-    if (!providerOrigin) return setError('尚未配置模型 Provider')
-    if (!await requestHostPermission(providerOrigin)) return setError('未授予模型服务域名访问权限')
+    if (providerOrigins.length === 0) return setError('尚未配置模型 Provider')
+    if (!await requestHostPermissions(providerOrigins)) return setError('未授予全部阶段模型服务域名的访问权限')
     const tab = await activeTab()
     const response = await chrome.runtime.sendMessage({
       type: 'START_TRANSLATION',
@@ -179,6 +189,10 @@ export function App() {
 
   const setStatus = async (type: 'PAUSE_TRANSLATION' | 'RESUME_TRANSLATION' | 'STOP_TRANSLATION') => {
     if (!task) return
+    if (type === 'RESUME_TRANSLATION' && providerOrigins.length > 0 && !await requestHostPermissions(providerOrigins)) {
+      setError('未授予全部阶段模型服务域名的访问权限')
+      return
+    }
     const response = await chrome.runtime.sendMessage({ type, taskId: task.taskId })
     if (!response?.ok) setError(response?.error || '任务操作失败')
     if (response?.task) setTask(response.task)

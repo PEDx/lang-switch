@@ -91,7 +91,7 @@ export function buildTranslationContextWindow(input: {
 export function updateTranslationMemory(
   existing: SegmentTranslation[] | undefined,
   completed: SegmentTranslation[],
-  maxSegments = 8,
+  maxSegments = 24,
 ): SegmentTranslation[] {
   const merged = new Map((existing ?? []).map((item) => [item.id, item]))
   for (const item of completed) {

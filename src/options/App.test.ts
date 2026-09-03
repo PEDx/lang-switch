@@ -17,4 +17,11 @@ describe('Provider defaults', () => {
       baseUrl: 'https://api.openai.com/v1',
     })
   })
+
+  it('creates a native OpenAI Responses provider', () => {
+    expect(createEmptyProvider('openai-responses')).toMatchObject({
+      type: 'openai-responses',
+      baseUrl: 'https://api.openai.com/v1',
+    })
+  })
 })

@@ -17,3 +17,7 @@ export function ensureProviderHostPermission(provider: ProviderConfig): Promise<
 export function requestHostPermission(origin: string): Promise<boolean> {
   return chrome.permissions.request({ origins: [origin] })
 }
+
+export function requestHostPermissions(origins: string[]): Promise<boolean> {
+  return chrome.permissions.request({ origins: [...new Set(origins)] })
+}

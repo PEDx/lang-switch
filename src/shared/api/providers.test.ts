@@ -1,6 +1,12 @@
 import { AnthropicProvider, extractAnthropicText, getAnthropicEndpoint, mapAnthropicRequest } from './anthropic-provider'
 import { createProvider } from './provider-factory'
 import { getOpenAIEndpoint, mapOpenAIRequest, OpenAICompatibleProvider, usesMaxCompletionTokens } from './openai-compatible-provider'
+import {
+  extractOpenAIResponsesText,
+  getOpenAIResponsesEndpoint,
+  mapOpenAIResponsesRequest,
+  OpenAIResponsesProvider,
+} from './openai-responses-provider'
 
 describe('provider request mapping', () => {
   it('maps OpenAI system messages and JSON response format', () => {
@@ -26,6 +32,29 @@ describe('provider request mapping', () => {
     expect(body).not.toHaveProperty('temperature')
   })
 
+  it('maps native OpenAI Responses requests and endpoints', () => {
+    const body = mapOpenAIResponsesRequest({
+      model: 'gpt-test', system: 'system', messages: [{ role: 'user', content: 'hello' }],
+      maxTokens: 99, temperature: 0.2, responseFormat: 'json',
+    })
+    expect(body).toMatchObject({
+      model: 'gpt-test', instructions: 'system', input: [{ role: 'user', content: 'hello' }],
+      store: false, max_output_tokens: 99, temperature: 0.2,
+      text: { format: { type: 'json_object' } },
+    })
+    expect(getOpenAIResponsesEndpoint({ id: '1', name: 'x', type: 'openai-responses', baseUrl: 'https://api.openai.com/v1/', apiKey: 'secret', model: 'm' }))
+      .toBe('https://api.openai.com/v1/responses')
+    expect(getOpenAIResponsesEndpoint({ id: '1', name: 'x', type: 'openai-responses', baseUrl: 'https://api.openai.com', apiKey: 'secret', model: 'm' }))
+      .toBe('https://api.openai.com/v1/responses')
+  })
+
+  it('extracts output_text blocks from native Responses output', () => {
+    expect(extractOpenAIResponsesText([
+      { content: [{ type: 'reasoning', text: 'hidden' }] },
+      { content: [{ type: 'output_text', text: 'Hello ' }, { type: 'output_text', text: 'world' }] },
+    ])).toBe('Hello world')
+  })
+
   it('maps Anthropic system and max_tokens at the top level', () => {
     const body = mapAnthropicRequest({
       model: 'claude-test', system: 'system', messages: [{ role: 'user', content: 'hello' }], maxTokens: 321,
@@ -41,5 +70,6 @@ describe('provider request mapping', () => {
   it('creates the correct provider implementation', () => {
     expect(createProvider({ id: '1', name: 'OpenAI', type: 'openai-compatible', baseUrl: 'https://api.example.com/v1', apiKey: 'key', model: 'm' })).toBeInstanceOf(OpenAICompatibleProvider)
     expect(createProvider({ id: '2', name: 'Anthropic', type: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKey: 'key', model: 'm' })).toBeInstanceOf(AnthropicProvider)
+    expect(createProvider({ id: '3', name: 'Responses', type: 'openai-responses', baseUrl: 'https://api.openai.com/v1', apiKey: 'key', model: 'm' })).toBeInstanceOf(OpenAIResponsesProvider)
   })
 })

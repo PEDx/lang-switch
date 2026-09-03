@@ -15,6 +15,16 @@ describe('translation display', () => {
     expect(original?.parentElement?.tagName).toBe('ARTICLE')
   })
 
+  it('renders model-provided paragraph breaks as readable paragraphs', () => {
+    document.body.innerHTML = '<article><p id="paragraph">Original paragraph.</p></article>'
+    expect(renderTranslation(segment, '第一段译文。\n\n第二段译文。', false)).toBe(true)
+    const result = document.querySelector<HTMLElement>('[data-ai-reader-for="segment-one"]')!
+    const paragraphs = result.querySelectorAll('.ai-reader-translation-paragraph')
+    expect(paragraphs).toHaveLength(2)
+    expect(paragraphs[0].textContent).toBe('第一段译文。')
+    expect(paragraphs[1].textContent).toBe('第二段译文。')
+  })
+
   it('switches display mode and fully restores page changes', () => {
     document.body.innerHTML = '<p id="paragraph">Original paragraph.</p>'
     renderTranslation(segment, '译文', false)

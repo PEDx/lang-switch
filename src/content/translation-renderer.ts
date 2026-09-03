@@ -61,6 +61,13 @@ function ensureStyles(): void {
     html[data-ai-reader-translation-font="sans"] body .${RESULT_CLASS} {
       font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif !important;
     }
+    html body .${RESULT_CLASS} > .ai-reader-translation-paragraph {
+      display: block !important; margin: 0 0 .72em !important; padding: 0 !important;
+      color: inherit !important; font: inherit !important; line-height: inherit !important;
+    }
+    html body .${RESULT_CLASS} > .ai-reader-translation-paragraph:last-child {
+      margin-bottom: 0 !important;
+    }
     .${TOOLBAR_CLASS} {
       position: fixed !important; inset: auto !important; display: none !important;
       gap: .25em !important; margin: 0 !important; padding: .2em !important;
@@ -166,9 +173,16 @@ export function renderTranslation(
   if (originalStyle.fontSize && originalStyle.fontSize !== '0px') {
     result.style.setProperty('font-size', originalStyle.fontSize, 'important')
   }
-  const content = document.createElement('span')
-  content.textContent = translatedText
-  result.append(content)
+  const paragraphs = translatedText
+    .split(/\r?\n\s*\r?\n+/)
+    .map((paragraph) => paragraph.replace(/\s*\r?\n\s*/g, ' ').trim())
+    .filter(Boolean)
+  for (const paragraph of paragraphs.length > 0 ? paragraphs : [translatedText]) {
+    const content = document.createElement(paragraphs.length > 1 ? 'p' : 'span')
+    if (paragraphs.length > 1) content.className = 'ai-reader-translation-paragraph'
+    content.textContent = paragraph
+    result.append(content)
+  }
   if (showToolbar) attachFloatingToolbar(result, segment.id, translatedText)
   original.insertAdjacentElement('afterend', result)
   return true

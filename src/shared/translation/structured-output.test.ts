@@ -24,17 +24,31 @@ describe('structured model output', () => {
 
   it('validates chunk-level review feedback', () => {
     const review = reviewResponseSchema.parse({
-      overallAssessment: '准确，但中文节奏生硬。',
+      verdict: 'rewrite',
       rewritePriorities: ['恢复作者的技术幽默'],
-      continuityIssues: ['第二段转折不自然'],
-      terminologyIssues: [],
-      segmentSuggestions: [{
+      criticalIssues: [],
+      styleIssues: [{
         id: 'segment-2',
-        issues: ['机械直译'],
-        suggestion: '保留原文比喻并重组句子。',
+        type: 'literal',
+        draftEvidence: '无线电与 CDN 通信',
+        instruction: '保留原文比喻并重组句子。',
       }],
     })
-    expect(review.segmentSuggestions[0].id).toBe('segment-2')
+    expect(review.styleIssues[0].id).toBe('segment-2')
+  })
+
+  it('tolerates provider-specific review labels and non-critical metadata errors', () => {
+    const review = reviewResponseSchema.parse({
+      verdict: 'needs_revision',
+      rewritePriorities: [],
+      criticalIssues: [{
+        id: 'segment-1', type: 'mistranslation', sourceEvidence: 'attempting',
+        draftEvidence: '竭尽全力', instruction: '恢复原文的语气强度。',
+      }],
+      styleIssues: [],
+    })
+    expect(review.verdict).toBe('rewrite')
+    expect(review.criticalIssues[0].type).toBe('mistranslation')
   })
 
   it('normalizes malformed optional analysis values from smaller models', () => {

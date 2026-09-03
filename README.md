@@ -70,7 +70,7 @@ Side Panel 会显示文章识别结果、当前阶段、Chunk 进度、请求状
   <img src="./public/docs/settings.jpg" alt="Lang Switch 配置界面：Provider 与阅读偏好" width="900" />
 </p>
 
-可以保存多个 Provider，选择默认模型、目标语言、原文透明度和站点规则。API Key 只保存在浏览器扩展的本地存储中。
+可以保存多个 Provider，并设置主 Provider，或为全文分析、初译、审阅和润色分别选择模型。阶段路由只放在配置页，Side Panel 保持专注于阅读和任务进度。API Key 只保存在浏览器扩展的本地存储中。
 
 ## 核心能力
 
@@ -145,9 +145,12 @@ pnpm build
 
 打开扩展设置页，新增一个 Provider，填写 API 类型、Base URL、Model 和 API Key，点击“测试连接”后保存。支持：
 
+- [OpenAI Responses](https://developers.openai.com/api/docs/guides/migrate-to-responses/)（原生 `/v1/responses`，新项目推荐）；
 - OpenAI Compatible（`/chat/completions`）；
 - Anthropic Messages（`/v1/messages`，Base URL 已含 `/v1` 时会避免重复路径）；
 - OpenRouter、公司内部网关等兼容服务；高级选项还可配置完整 Endpoint、自定义 Headers、Temperature、最大输出 Token、超时和并发数。
+
+“翻译阶段模型”默认全部继承主 Provider。你也可以让分析和初译使用低成本模型，只让审阅或最终润色使用更强模型；每个阶段的 JSON 格式修复会继续使用该阶段的模型。
 
 ### 3. 翻译一篇文章
 
@@ -159,6 +162,16 @@ pnpm build
 4. 在阅读过程中暂停、重译单段或导出 Markdown。
 
 ## Provider 配置
+
+### OpenAI Responses
+
+```text
+API 类型：OpenAI Responses
+Base URL：https://api.openai.com/v1
+Model：你的 OpenAI 模型名称
+```
+
+默认请求地址为 `{baseUrl}/responses`；如果 Base URL 未包含 API 版本，则自动使用 `{baseUrl}/v1/responses`。适配器使用顶层 `instructions`、`input`、`max_output_tokens` 和 `text.format`，从响应的 `output_text` 内容块读取结果，并设置 `store: false`。
 
 ### OpenAI Compatible
 
@@ -214,7 +227,7 @@ src/
 ├─ sidepanel/        翻译控制台、进度监控、显示设置、导出面板
 ├─ options/          Provider、阅读偏好和站点规则配置
 └─ shared/
-   ├─ api/           OpenAI Compatible / Anthropic 适配器
+   ├─ api/           OpenAI Responses / OpenAI Compatible / Anthropic 适配器与阶段路由
    ├─ translation/   分块、上下文窗口、Prompt、Pipeline、缓存
    ├─ export/        Markdown 序列化、媒体处理和 ZIP
    ├─ messaging/     Zod 消息 Schema

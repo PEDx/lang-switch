@@ -2,6 +2,7 @@ import type { LLMProvider, ProviderConfig } from '../types'
 import { providerConfigSchema } from '../schemas'
 import { AnthropicProvider } from './anthropic-provider'
 import { OpenAICompatibleProvider } from './openai-compatible-provider'
+import { OpenAIResponsesProvider } from './openai-responses-provider'
 import { ProviderError } from './provider'
 
 export function createProvider(rawConfig: ProviderConfig): LLMProvider {
@@ -10,6 +11,8 @@ export function createProvider(rawConfig: ProviderConfig): LLMProvider {
   switch (parsed.data.type) {
     case 'openai-compatible':
       return new OpenAICompatibleProvider(parsed.data)
+    case 'openai-responses':
+      return new OpenAIResponsesProvider(parsed.data)
     case 'anthropic':
       return new AnthropicProvider(parsed.data)
   }

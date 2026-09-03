@@ -1,10 +1,15 @@
 import { messageSchema } from '../shared/messaging'
 import { createProvider } from '../shared/api/provider-factory'
+import { resolveTranslationProviders } from '../shared/api/provider-routing'
 import { analyzeArticle } from '../shared/translation/article-analyzer'
 import { createTranslationChunks } from '../shared/translation/chunker'
 import { TranslationCache } from '../shared/translation/cache'
 import { mergeSegmentTranslations, updateTranslationMemory } from '../shared/translation/context-window'
-import { PRECISION_PIPELINE_VERSION, translateChunk } from '../shared/translation/pipeline'
+import {
+  PRECISION_PIPELINE_VERSION,
+  translateChunk,
+  type PipelineStageRuntime,
+} from '../shared/translation/pipeline'
 import {
   getProviders,
   getSettings,
@@ -223,10 +228,30 @@ async function renderTranslationsToPage(input: {
 async function resolveProvider(providerId?: string): Promise<ProviderConfig> {
   const providers = await getProviders()
   const settings = await getSettings()
-  const id = providerId || settings.defaultProviderId
+  const id = providerId || settings.primaryProviderId || settings.defaultProviderId
   const provider = providers.find((item) => item.id === id) ?? providers[0]
   if (!provider) throw new Error('尚未配置模型 Provider，请先打开扩展设置')
   return provider
+}
+
+function createStageRuntime(
+  config: ProviderConfig,
+  settings: UserSettings,
+  instances: Map<string, ReturnType<typeof createProvider>>,
+): PipelineStageRuntime {
+  let provider = instances.get(config.id)
+  if (!provider) {
+    provider = createProvider(config)
+    instances.set(config.id, provider)
+  }
+  return {
+    provider,
+    providerId: config.id,
+    providerType: config.type,
+    model: config.model,
+    maxTokens: config.maxTokens,
+    requestTimeoutMs: config.timeoutMs ?? settings.requestTimeoutMs,
+  }
 }
 
 function createTask(
@@ -356,9 +381,16 @@ async function runTask(tabId: number, existing?: TranslationTaskState): Promise<
     resumed: Boolean(existing),
   })
   try {
-    const [snapshot, settings] = await Promise.all([getSnapshot(tabId), getSettings()])
-    const providerConfig = await resolveProvider(existing?.providerId)
-    const provider = createProvider(providerConfig)
+    const [snapshot, settings, providers] = await Promise.all([getSnapshot(tabId), getSettings(), getProviders()])
+    const providerConfigs = resolveTranslationProviders(providers, settings, existing?.providerId)
+    if (!providerConfigs) throw new Error('尚未配置模型 Provider，请先打开扩展设置')
+    const providerConfig = providerConfigs.primary
+    const providerInstances = new Map<string, ReturnType<typeof createProvider>>()
+    const primaryRuntime = createStageRuntime(providerConfigs.primary, settings, providerInstances)
+    const analysisRuntime = createStageRuntime(providerConfigs.analysis, settings, providerInstances)
+    const initialRuntime = createStageRuntime(providerConfigs.initial, settings, providerInstances)
+    const reviewRuntime = createStageRuntime(providerConfigs.review, settings, providerInstances)
+    const refinementRuntime = createStageRuntime(providerConfigs.refinement, settings, providerInstances)
     const chunks = createTranslationChunks(snapshot.segments, {
       maxTokens: settings.maxChunkTokens,
     })
@@ -426,6 +458,10 @@ async function runTask(tabId: number, existing?: TranslationTaskState): Promise<
       chunkCount: chunks.length,
       providerType: providerConfig.type,
       model: providerConfig.model,
+      analysisModel: `${providerConfigs.analysis.name} · ${providerConfigs.analysis.model}`,
+      initialModel: `${providerConfigs.initial.name} · ${providerConfigs.initial.model}`,
+      reviewModel: `${providerConfigs.review.name} · ${providerConfigs.review.model}`,
+      refinementModel: `${providerConfigs.refinement.name} · ${providerConfigs.refinement.model}`,
       maxChunkTokens: settings.maxChunkTokens,
       maxOutputTokens: providerConfig.maxTokens ?? null,
       timeoutMs: providerConfig.timeoutMs ?? settings.requestTimeoutMs,
@@ -438,15 +474,15 @@ async function runTask(tabId: number, existing?: TranslationTaskState): Promise<
       sampledSegmentCount: snapshot.segments.length,
     })
     const context = await analyzeArticle({
-      provider,
-      model: providerConfig.model,
+      provider: analysisRuntime.provider,
+      model: analysisRuntime.model,
       snapshot,
       sourceLanguage: 'auto',
       targetLanguage: settings.defaultTargetLanguage,
       terminology: settings.terminology,
-      maxTokens: providerConfig.maxTokens,
+      maxTokens: analysisRuntime.maxTokens,
       signal: controller.signal,
-      requestTimeoutMs: providerConfig.timeoutMs ?? settings.requestTimeoutMs,
+      requestTimeoutMs: analysisRuntime.requestTimeoutMs,
       maxRetries: 2,
       onProviderTelemetry: recordProviderTelemetry,
       onRepair: () => log('warn', 'pipeline', '全文分析 JSON 格式异常，执行一次修复'),
@@ -481,21 +517,27 @@ async function runTask(tabId: number, existing?: TranslationTaskState): Promise<
       })
       try {
         const translated = await translateChunk(chunk, snapshot.segments, {
-          provider,
-          providerType: providerConfig.type,
-          model: providerConfig.model,
+          provider: primaryRuntime.provider,
+          providerType: primaryRuntime.providerType,
+          model: primaryRuntime.model,
+          stageProviders: {
+            analysis: analysisRuntime,
+            initial: initialRuntime,
+            review: reviewRuntime,
+            refinement: refinementRuntime,
+          },
           articleContext: context,
           sourceLanguage: 'auto',
           targetLanguage: settings.defaultTargetLanguage,
           translationMode: 'precision',
           terminology: settings.terminology,
           customInstruction: settings.customInstruction,
-          maxTokens: providerConfig.maxTokens,
+          maxTokens: primaryRuntime.maxTokens,
           maxContextTokens: Math.min(900, Math.max(400, Math.floor(settings.maxChunkTokens * 0.6))),
           previousFinalTranslations: task.translationMemory,
           cache,
           signal: controller.signal,
-          requestTimeoutMs: providerConfig.timeoutMs ?? settings.requestTimeoutMs,
+          requestTimeoutMs: primaryRuntime.requestTimeoutMs,
           maxRetries: 2,
           onProviderTelemetry: recordProviderTelemetry,
           onProgress: async (progress) => {
@@ -544,7 +586,8 @@ async function runTask(tabId: number, existing?: TranslationTaskState): Promise<
                     operation: activeRequest?.operation,
                     details: {
                       segmentCount: progress.segmentCount ?? 0,
-                      model: providerConfig.model,
+                      model: progress.model ?? primaryRuntime.model,
+                      providerType: progress.providerType ?? primaryRuntime.providerType,
                       elapsedMs,
                       attempt: activeRequest?.attempt ?? null,
                       requestState: activeRequest?.state ?? null,
@@ -571,7 +614,8 @@ async function runTask(tabId: number, existing?: TranslationTaskState): Promise<
                 chunkId: progress.chunkId,
                 segmentCount: progress.segmentCount ?? 0,
                 durationMs: progress.durationMs ?? null,
-                model: providerConfig.model,
+                model: progress.model ?? primaryRuntime.model,
+                providerType: progress.providerType ?? primaryRuntime.providerType,
               },
             )
           },
@@ -723,13 +767,19 @@ async function retranslateSegment(
   segmentId: string,
   instruction?: string,
 ): Promise<void> {
-  const [snapshot, settings, storedTask] = await Promise.all([
-    getSnapshot(tabId), getSettings(), getTaskForTab(tabId),
+  const [snapshot, settings, storedTask, providers] = await Promise.all([
+    getSnapshot(tabId), getSettings(), getTaskForTab(tabId), getProviders(),
   ])
   const segment = snapshot.segments.find((item) => item.id === segmentId)
   if (!segment) throw new Error('原段落已被页面移除')
-  const config = await resolveProvider(storedTask?.providerId)
-  const provider = createProvider(config)
+  const providerConfigs = resolveTranslationProviders(providers, settings, storedTask?.providerId)
+  if (!providerConfigs) throw new Error('尚未配置模型 Provider，请先打开扩展设置')
+  const providerInstances = new Map<string, ReturnType<typeof createProvider>>()
+  const primaryRuntime = createStageRuntime(providerConfigs.primary, settings, providerInstances)
+  const analysisRuntime = createStageRuntime(providerConfigs.analysis, settings, providerInstances)
+  const initialRuntime = createStageRuntime(providerConfigs.initial, settings, providerInstances)
+  const reviewRuntime = createStageRuntime(providerConfigs.review, settings, providerInstances)
+  const refinementRuntime = createStageRuntime(providerConfigs.refinement, settings, providerInstances)
   let task = storedTask
   let telemetryQueue: Promise<void> = Promise.resolve()
   const chunkId = `single-${segmentId}`
@@ -771,10 +821,10 @@ async function retranslateSegment(
     })
   }
   const context = contexts.get(tabId) ?? await analyzeArticle({
-    provider, model: config.model, snapshot, sourceLanguage: 'auto',
+    provider: analysisRuntime.provider, model: analysisRuntime.model, snapshot, sourceLanguage: 'auto',
     targetLanguage: settings.defaultTargetLanguage, terminology: settings.terminology,
-    maxTokens: config.maxTokens,
-    requestTimeoutMs: config.timeoutMs ?? settings.requestTimeoutMs,
+    maxTokens: analysisRuntime.maxTokens,
+    requestTimeoutMs: analysisRuntime.requestTimeoutMs,
     maxRetries: 2,
     onProviderTelemetry: recordProviderTelemetry,
   })
@@ -786,15 +836,24 @@ async function retranslateSegment(
     },
     snapshot.segments,
     {
-      provider, providerType: config.type, model: config.model, articleContext: context,
+      provider: primaryRuntime.provider,
+      providerType: primaryRuntime.providerType,
+      model: primaryRuntime.model,
+      stageProviders: {
+        analysis: analysisRuntime,
+        initial: initialRuntime,
+        review: reviewRuntime,
+        refinement: refinementRuntime,
+      },
+      articleContext: context,
       sourceLanguage: 'auto', targetLanguage: settings.defaultTargetLanguage,
       translationMode: 'precision', terminology: settings.terminology,
       customInstruction: instruction || settings.customInstruction,
-      maxTokens: config.maxTokens,
+      maxTokens: primaryRuntime.maxTokens,
       maxContextTokens: Math.min(900, Math.max(400, Math.floor(settings.maxChunkTokens * 0.6))),
       previousFinalTranslations: task?.translationMemory,
       cache: new TranslationCache(settings.cacheCapacity), bypassCache: true,
-      requestTimeoutMs: config.timeoutMs ?? settings.requestTimeoutMs,
+      requestTimeoutMs: primaryRuntime.requestTimeoutMs,
       maxRetries: 2,
       onProviderTelemetry: recordProviderTelemetry,
     },
