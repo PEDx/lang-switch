@@ -20,6 +20,8 @@ export interface SemanticSegment {
   tagName: string
   sourceText: string
   elementPath: string
+  /** Index of a loose text run within elementPath, excluding injected UI. */
+  textRun?: number
   headingContext?: string[]
   order: number
 }

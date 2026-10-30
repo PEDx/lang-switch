@@ -1,4 +1,5 @@
 import type { ArticleRegionResult, SiteRule } from '../shared/types'
+import { getTextRuns, IGNORED_SELECTOR, SEMANTIC_SELECTOR, TEXT_CONTAINER_SELECTOR } from '../shared/text-runs'
 
 const PRIMARY_SELECTORS = ['article', 'main', '[role="main"]', '[role="article"]']
 const SECONDARY_SELECTORS = [
@@ -70,12 +71,12 @@ const SEMANTIC_BLOCK_SELECTOR = 'p,li,blockquote,figcaption,dd,dt'
 
 function countParagraphLikeElements(element: HTMLElement): number {
   const semanticCount = element.querySelectorAll(SEMANTIC_BLOCK_SELECTOR).length
-  const genericCount = [...element.querySelectorAll<HTMLElement>('div')].filter((candidate) => {
-    if (candidate.closest('[data-ai-reader-inserted]')) return false
-    if (candidate.querySelector(SEMANTIC_BLOCK_SELECTOR)) return false
-    if (candidate.querySelector('div')) return false
-    return normalizedText(candidate).length >= 2
-  }).length
+  const genericCount = [element, ...element.querySelectorAll<HTMLElement>(TEXT_CONTAINER_SELECTOR)]
+    .reduce((count, candidate) => {
+      if (candidate.closest(IGNORED_SELECTOR) || candidate.closest(SEMANTIC_SELECTOR)) return count
+      if (!isElementVisible(candidate)) return count
+      return count + getTextRuns(candidate).length
+    }, 0)
   return semanticCount + genericCount
 }
 

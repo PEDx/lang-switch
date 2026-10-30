@@ -112,6 +112,7 @@ export const semanticSegmentSchema = z.object({
   tagName: z.string(),
   sourceText: z.string(),
   elementPath: z.string(),
+  textRun: z.number().int().nonnegative().optional(),
   headingContext: z.array(z.string()).optional(),
   order: z.number(),
 })

@@ -1,5 +1,6 @@
 import type { DisplayMode, SemanticSegment } from '../shared/types'
 import { resolveSegmentElement } from './segment-extractor'
+import { getTextRuns, SOURCE_WRAPPER_SELECTOR } from '../shared/text-runs'
 
 const ORIGINAL_CLASS = 'ai-reader-translation-original'
 const RESULT_CLASS = 'ai-reader-translation-result'
@@ -9,6 +10,7 @@ const TOOLBAR_CLASS = 'ai-reader-translation-toolbar'
 let floatingToolbar: HTMLElement | null = null
 let toolbarState: { segmentId: string; text: string } | null = null
 let hideToolbarTimer: number | undefined
+const originalsWithoutClass = new WeakSet<HTMLElement>()
 
 function hideToolbar(): void {
   window.clearTimeout(hideToolbarTimer)
@@ -146,15 +148,30 @@ export function renderTranslation(
   showToolbar = true,
 ): boolean {
   ensureStyles()
-  const original = resolveSegmentElement(segment)
+  let original = resolveSegmentElement(segment)
   if (!original || !original.isConnected) return false
+  if (segment.textRun !== undefined && !original.matches(SOURCE_WRAPPER_SELECTOR)) {
+    const run = getTextRuns(original)[segment.textRun]
+    if (!run || run.text !== segment.sourceText) return false
+    const range = document.createRange()
+    range.setStartBefore(run.nodes[0])
+    range.setEndAfter(run.nodes[run.nodes.length - 1])
+    const wrapper = document.createElement('span')
+    wrapper.dataset.aiReaderSourceWrapper = 'true'
+    wrapper.append(range.extractContents())
+    range.insertNode(wrapper)
+    original = wrapper
+  }
+  if (!original.hasAttribute('class')) originalsWithoutClass.add(original)
   original.classList.add(ORIGINAL_CLASS)
   original.dataset.aiReaderSegmentId = segment.id
   const existing = document.querySelector<HTMLElement>(
     `[data-ai-reader-for="${CSS.escape(segment.id)}"]`,
   )
   if (existing) existing.remove()
-  const result = document.createElement('div')
+  // A distinct tag keeps original :nth-of-type locators stable for subsequent
+  // paragraphs and figures, including pages mixing p, div, and loose text.
+  const result = document.createElement('ai-reader-translation')
   result.className = RESULT_CLASS
   result.dataset.aiReaderFor = segment.id
   result.dataset.aiReaderInserted = 'true'
@@ -223,7 +240,14 @@ export function restoreOriginalPage(): void {
   toolbarState = null
   document.querySelectorAll<HTMLElement>(`.${ORIGINAL_CLASS}`).forEach((element) => {
     element.classList.remove(ORIGINAL_CLASS)
+    if (originalsWithoutClass.has(element) && element.classList.length === 0) element.removeAttribute('class')
+    originalsWithoutClass.delete(element)
     delete element.dataset.aiReaderSegmentId
+  })
+  // Unwrap source nodes rather than removing them; links retain their identity
+  // and event listeners, and media never belongs to a source wrapper.
+  document.querySelectorAll<HTMLElement>(SOURCE_WRAPPER_SELECTOR).forEach((wrapper) => {
+    wrapper.replaceWith(...wrapper.childNodes)
   })
   delete document.documentElement.dataset.aiReaderDisplay
   delete document.documentElement.dataset.aiReaderTranslationStyle

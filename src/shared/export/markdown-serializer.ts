@@ -1,5 +1,6 @@
 import type { SemanticSegment } from '../types'
 import type { ExportBlock, ExportTemplateToken } from './export-types'
+import { getTextRuns } from '../text-runs'
 import {
   MediaCollector,
   mediaPlaceholder,
@@ -22,6 +23,8 @@ interface SerializerContext {
   baseUrl: string
   collector: MediaCollector
   segmentByElement: Map<Element, SemanticSegment>
+  runByNode: Map<Node, { segment: SemanticSegment; nodes: Node[] }>
+  runNodes: Set<Node>
   nextBlockId: number
 }
 
@@ -317,7 +320,7 @@ function serializeElement(element: HTMLElement, context: SerializerContext): Exp
       mediaIds: content.mediaIds,
     })]
   }
-  if (tag === 'p' || tag === 'figcaption') {
+  if (tag === 'p' || tag === 'figcaption' || (segment && ['div', 'span', 'section', 'main', 'article'].includes(tag))) {
     const content = inline()
     if (!content.markdown) return []
     return [createBlock(context, {
@@ -375,7 +378,23 @@ function serializeElement(element: HTMLElement, context: SerializerContext): Exp
       mediaIds: unique(children.flatMap((block) => block.mediaIds)),
     })]
   }
-  return [...element.children].flatMap((child) => serializeElement(child as HTMLElement, context))
+  return serializeChildren(element, context)
+}
+
+function serializeChildren(element: HTMLElement, context: SerializerContext): ExportBlock[] {
+  return [...element.childNodes].flatMap((node) => {
+    const run = context.runByNode.get(node)
+    if (run) {
+      const parts = run.nodes.map((child) => serializeInline(child, context))
+      return [createBlock(context, {
+        type: 'paragraph', sourceMarkdown: parts.map((part) => part.markdown).join('').trim(),
+        segmentIds: [run.segment.id], translationTemplate: segmentTemplate(run.segment),
+        mediaIds: unique(parts.flatMap((part) => part.mediaIds)),
+      })]
+    }
+    if (context.runNodes.has(node)) return []
+    return node instanceof HTMLElement ? serializeElement(node, context) : []
+  })
 }
 
 export function serializeArticleToBlocks(input: {
@@ -384,10 +403,21 @@ export function serializeArticleToBlocks(input: {
   baseUrl: string
 }): { blocks: ExportBlock[]; media: ReturnType<MediaCollector['list']> } {
   const segmentByElement = new Map<Element, SemanticSegment>()
+  const runByNode: SerializerContext['runByNode'] = new Map()
+  const runNodes = new Set<Node>()
   for (const segment of input.segments) {
     try {
       const element = input.root.ownerDocument.querySelector(segment.elementPath)
-      if (element && input.root.contains(element)) segmentByElement.set(element, segment)
+      if (element instanceof HTMLElement && input.root.contains(element)) {
+        if (segment.textRun === undefined) segmentByElement.set(element, segment)
+        else {
+          const run = getTextRuns(element)[segment.textRun]
+          if (run?.text === segment.sourceText) {
+            runByNode.set(run.nodes[0], { segment, nodes: run.nodes })
+            run.nodes.forEach((node) => runNodes.add(node))
+          }
+        }
+      }
     } catch {
       // A stale selector is ignored; remaining article blocks are still exportable.
     }
@@ -397,10 +427,12 @@ export function serializeArticleToBlocks(input: {
     baseUrl: input.baseUrl,
     collector,
     segmentByElement,
+    runByNode,
+    runNodes,
     nextBlockId: 0,
   }
   const blocks = input.root.matches('h1,h2,h3,h4,h5,h6,p,ul,ol,blockquote,pre,table,figure,img,picture,video,audio,iframe,hr,details')
     ? serializeElement(input.root, context)
-    : [...input.root.children].flatMap((child) => serializeElement(child as HTMLElement, context))
+    : segmentByElement.has(input.root) ? serializeElement(input.root, context) : serializeChildren(input.root, context)
   return { blocks, media: collector.list() }
 }

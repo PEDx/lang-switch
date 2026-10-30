@@ -1,27 +1,15 @@
 import type { SemanticSegment } from '../shared/types'
 import { getUniqueSelector, isElementVisible } from './article-detector'
+import {
+  extractNodesText, getTextRuns, IGNORED_SELECTOR, isMeaningfulText,
+  SEMANTIC_SELECTOR, SOURCE_WRAPPER_SELECTOR, TEXT_BOUNDARY_SELECTOR, TEXT_CONTAINER_SELECTOR,
+} from '../shared/text-runs'
 
-export const SEMANTIC_SELECTOR = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,td,th,dt,dd'
-export const IGNORED_SELECTOR =
-  'script,style,noscript,textarea,input,select,option,button,svg,canvas,video,audio,code,pre,kbd,samp,[aria-hidden="true"],[data-ai-reader-inserted]'
+export { IGNORED_SELECTOR, SEMANTIC_SELECTOR } from '../shared/text-runs'
 const GENERIC_TEXT_BLOCK_SELECTOR = 'div'
 
-function normalizeText(value: string): string {
-  return value.replace(/\s+/g, ' ').trim()
-}
-
 export function extractElementText(element: HTMLElement): string {
-  const clone = element.cloneNode(true) as HTMLElement
-  clone.querySelectorAll(IGNORED_SELECTOR).forEach((node) => node.remove())
-  return normalizeText(clone.textContent ?? '')
-}
-
-function isMeaningfulText(text: string): boolean {
-  if (text.length < 2) return false
-  if (/^[\d\s.,:%+\-–—/()]+$/.test(text)) return false
-  if (/^(https?:\/\/|www\.)\S+$/i.test(text)) return false
-  if (/^[\w.+-]+@[\w.-]+\.[a-z]{2,}$/i.test(text)) return false
-  return true
+  return extractNodesText([element])
 }
 
 function hasIgnoredAncestor(element: Element, root: HTMLElement): boolean {
@@ -36,8 +24,7 @@ function hasIgnoredAncestor(element: Element, root: HTMLElement): boolean {
  */
 function isGenericTextBlock(element: HTMLElement, root: HTMLElement): boolean {
   if (element.tagName !== 'DIV' || !root.contains(element)) return false
-  if (element.querySelector(SEMANTIC_SELECTOR)) return false
-  if (element.querySelector(GENERIC_TEXT_BLOCK_SELECTOR)) return false
+  if (element.querySelector(`${TEXT_BOUNDARY_SELECTOR},${SOURCE_WRAPPER_SELECTOR}`)) return false
   return isMeaningfulText(extractElementText(element))
 }
 
@@ -69,18 +56,34 @@ export function extractSemanticSegments(root: HTMLElement): SemanticSegment[] {
   if (root.matches(SEMANTIC_SELECTOR)) elements.unshift(root)
   else if (isGenericTextBlock(root, root)) elements.unshift(root)
 
+  const blocks = elements.map((element) => ({
+    element,
+    anchor: element as Node,
+    text: extractElementText(element),
+    textRun: undefined as number | undefined,
+  }))
+  const wholeBlocks = new Set(elements)
+  for (const container of [root, ...root.querySelectorAll<HTMLElement>(TEXT_CONTAINER_SELECTOR)]) {
+    if (wholeBlocks.has(container) || !isElementVisible(container) || hasIgnoredAncestor(container, root)) continue
+    // Semantic blocks already own their inline contents (e.g. a div inside a li).
+    const semanticParent = container.closest(SEMANTIC_SELECTOR)
+    if (semanticParent && root.contains(semanticParent)) continue
+    getTextRuns(container).forEach((run, textRun) => {
+      blocks.push({ element: container, anchor: run.nodes[0], text: run.text, textRun })
+    })
+  }
+
   // querySelectorAll calls above produce separate lists; restore document
   // order so heading context and segment ordering remain stable.
-  elements.sort((left, right) => {
-    if (left === right) return 0
-    const position = left.compareDocumentPosition(right)
+  blocks.sort((left, right) => {
+    if (left.anchor === right.anchor) return 0
+    const position = left.anchor.compareDocumentPosition(right.anchor)
     return position & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
   })
 
-  for (const element of elements) {
+  for (const { element, text, textRun } of blocks) {
     if (!isElementVisible(element) || hasIgnoredAncestor(element, root)) continue
     if (element.closest('[data-ai-reader-inserted]')) continue
-    const text = extractElementText(element)
     if (!isMeaningfulText(text)) continue
 
     const headingMatch = /^H([1-6])$/.exec(element.tagName)
@@ -95,10 +98,11 @@ export function extractSemanticSegments(root: HTMLElement): SemanticSegment[] {
       .sort(([a], [b]) => a - b)
       .map(([, value]) => value)
     segments.push({
-      id: createSegmentId(elementPath, text),
+      id: createSegmentId(textRun === undefined ? elementPath : `${elementPath}::text-run(${textRun})`, text),
       tagName: element.tagName.toLowerCase(),
       sourceText: text,
       elementPath,
+      ...(textRun === undefined ? {} : { textRun }),
       headingContext,
       order: segments.length,
     })
@@ -113,10 +117,15 @@ export function resolveSegmentElement(segment: SemanticSegment): HTMLElement | n
   if (marked?.isConnected && extractElementText(marked) === segment.sourceText) return marked
   try {
     const exact = document.querySelector<HTMLElement>(segment.elementPath)
+    if (segment.textRun !== undefined) {
+      if (exact && getTextRuns(exact)[segment.textRun]?.text === segment.sourceText) return exact
+      return null
+    }
     if (exact && extractElementText(exact) === segment.sourceText) return exact
   } catch {
     // Fall through to text-based recovery for SPA DOM replacements.
   }
+  if (segment.textRun !== undefined) return null
   const candidates = [...document.querySelectorAll<HTMLElement>(segment.tagName)]
     .filter((element) => !element.closest('[data-ai-reader-inserted]'))
     .filter((element) => extractElementText(element) === segment.sourceText)
